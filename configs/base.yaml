@@ -1,0 +1,30 @@
+# Base configuration — shared defaults
+seed: 42
+data_dir: "data/"
+results_dir: "results/"
+precision: "16-mixed"
+num_workers: 4
+
+# Dataset
+dataset:
+  manifest_path: "data/manifest.csv"
+  splits_dir: "data/splits/"
+  psd_length: 200          # fixed PSD vector length (center ± 100 bins)
+  exclude_unknown: false     # include 'unkn' for SSL, exclude for classification
+
+# Classes
+classes:
+  - "dab"
+  - "dvbt"
+  - "fm"
+  - "gsm"
+  - "lte"
+  - "tetra"
+num_classes: 6               # excludes 'unkn' for classification
+num_classes_with_unkn: 7
+
+# Preprocessing
+preprocessing:
+  normalization: "robust"    # robust (median/IQR) or per_sensor
+  clip_percentile: [1, 99]
+  epsilon: 1.0e-8

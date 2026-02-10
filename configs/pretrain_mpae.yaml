@@ -1,0 +1,47 @@
+# MPAE + SICR self-supervised pretraining config
+defaults:
+  base: "configs/base.yaml"
+
+# Training
+training:
+  max_epochs: 80
+  batch_size: 256
+  lr: 1.0e-4
+  weight_decay: 1.0e-5
+  warmup_epochs: 5
+  scheduler: "cosine"
+  gradient_clip_val: 1.0
+
+# Data
+data:
+  fraction: 1.0             # use all data for SSL (set 0.25 for quick run)
+  protocol: "pooled"
+  include_unknown: true       # use 'unkn' class data for SSL too
+
+# Encoder
+encoder:
+  type: "transformer"         # "transformer" or "cnn"
+  d_model: 128
+  n_layers: 4
+  n_heads: 4
+  ffn_dim: 256
+  dropout: 0.1
+  patch_size: 16
+
+# MPAE
+mpae:
+  mask_ratio: 0.6
+  decoder_dim: 64
+  decoder_layers: 2
+
+# SICR
+sicr:
+  lambda_sicr: 0.1
+  temperature: 0.07
+  projection_dim: 64
+
+# Logging
+logging:
+  log_every_n_steps: 50
+  save_top_k: 2
+  monitor: "val_loss"

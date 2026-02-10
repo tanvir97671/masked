@@ -1,0 +1,56 @@
+# Supervised fine-tuning config
+defaults:
+  base: "configs/base.yaml"
+
+# Training
+training:
+  max_epochs: 50
+  batch_size: 128
+  lr: 5.0e-5
+  weight_decay: 1.0e-4
+  warmup_epochs: 3
+  scheduler: "cosine"
+  gradient_clip_val: 1.0
+  early_stopping_patience: 10
+
+# Data
+data:
+  fraction: 1.0             # set 0.25 for quick run
+  protocol: "pooled"         # "pooled" or "loso" or "fewshot_loso"
+  include_unknown: false
+  fewshot_k: null            # set to int (5, 10, 50) for few-shot
+
+# Model
+model:
+  pretrained_ckpt: null      # path to MPAE pretrained checkpoint
+  freeze_encoder: false       # true = linear probing, false = full fine-tune
+  encoder_lr_scale: 0.1      # encoder LR = base LR * this scale
+  class_weights: "auto"      # "auto" = inverse frequency, null = uniform
+
+# Encoder (MUST match pretrain config to load weights correctly)
+encoder:
+  type: "transformer"
+  d_model: 128
+  n_layers: 4
+  n_heads: 4
+  ffn_dim: 256
+  dropout: 0.1
+  patch_size: 16
+
+# Classifier head
+head:
+  type: "mlp"                 # "linear" or "mlp"
+  hidden_dim: 128
+  dropout: 0.2
+
+# Calibration
+calibration:
+  enable: true
+  method: "temperature"       # "temperature" or "snr_aware"
+
+# Logging
+logging:
+  log_every_n_steps: 20
+  save_top_k: 3
+  monitor: "val_macro_f1"
+  monitor_mode: "max"

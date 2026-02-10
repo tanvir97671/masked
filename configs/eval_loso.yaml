@@ -1,0 +1,23 @@
+# LOSO / few-shot evaluation config
+defaults:
+  base: "configs/base.yaml"
+
+evaluation:
+  protocol: "loso"           # "pooled", "loso", "fewshot_loso"
+  num_loso_sensors: 10        # how many sensors to hold out (set lower for speed)
+  fewshot_k_values: [5, 10, 50, 100]
+  num_fewshot_seeds: 3        # repeat few-shot with different random K samples
+
+# Finetune-during-eval (for few-shot LOSO)
+fewshot_finetune:
+  max_epochs: 30
+  lr: 1.0e-4
+  batch_size: 64
+
+# Export
+export:
+  save_confusion_matrix: true
+  save_per_sensor_csv: true
+  save_paper_tables: true
+  save_reliability_diagram: true
+  figures_dpi: 300

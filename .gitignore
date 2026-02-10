@@ -1,0 +1,41 @@
+# Data
+data/opt/
+data/spectrum_bands/
+data/spectrum_bands.tar.gz
+data/manifest.csv
+data/splits/
+
+# Results & logs
+results/
+logs/
+wandb/
+
+# Checkpoints
+*.ckpt
+*.hdf5
+*.pt
+*.pth
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+venv/
+.venv/
