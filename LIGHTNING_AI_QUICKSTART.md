@@ -1,32 +1,34 @@
-# Lightning AI Studio Quick Start (L40S Optimized)
+# Lightning AI Studio Quick Start (L4 GPU, 24GB)
 
-## One-Command Full Pipeline
+## Prerequisites
+- Lightning AI Studio with **L4 GPU** (24GB VRAM)
+- Python 3.12+, PyTorch 2.x with CUDA
+
+---
+
+## Step-by-Step (25% Dataset — Credit-Saving Mode)
+
+### 1. Clone & Install (~2 min)
 ```bash
-git clone https://github.com/tanvir97671/masked.git && cd masked && \
-pip install -r requirements.txt && \
-python src/data/download_tiny_stream.py && \
-python src/data/parse_dataset.py && \
-python src/data/splits.py --manifest data/manifest.csv --output data/splits/ --fraction 0.25 --seed 42 && \
-python src/train_pretrain.py --config configs/pretrain_mpae.yaml --manifest data/manifest.csv --split data/splits/pooled_seed42_frac0.25.json --epochs 20 --accelerator gpu --devices 1 && \
-python src/train_finetune.py --config configs/finetune_classify.yaml --manifest data/manifest.csv --split data/splits/pooled_seed42_frac0.25.json --pretrained results/lightning_logs/version_0/checkpoints/epoch=*.ckpt --epochs 50 --accelerator gpu --devices 1
-```
-
-## Step-by-Step (25% Dataset)
-
-### 1. Setup (5 minutes)
-```bash
-cd masked  # Already cloned
+git clone https://github.com/tanvir97671/masked.git
+cd masked
 pip install -r requirements.txt
 ```
 
-### 2. Download & Parse Data (~2 minutes, 30MB)
+### 2. Set WandB API Key (optional but recommended)
+```bash
+export WANDB_API_KEY="your-key-here"
+```
+Get your key from https://wandb.ai/authorize
+
+### 3. Download & Parse Data (~2 min, 30MB stream)
 ```bash
 python src/data/download_tiny_stream.py
 python src/data/parse_dataset.py
 ```
 Expected: `Found 50 .npy files, 11 sensors, 21,351 total samples`
 
-### 3. Generate Splits (~5 seconds)
+### 4. Generate Splits (~5 sec)
 ```bash
 python src/data/splits.py \
   --manifest data/manifest.csv \
@@ -34,206 +36,77 @@ python src/data/splits.py \
   --fraction 0.25 \
   --seed 42
 ```
-Expected: `train=3735, val=801, test=801`
+Expected: `train=~3735, val=~801, test=~801`
 
-### 4. Pretrain MPAE + SICR (~30-40 min, 20 epochs)
+### 5. SSL Pretrain — MPAE + SICR (~20-30 min, 20 epochs)
 ```bash
 python src/train_pretrain.py \
   --config configs/pretrain_mpae.yaml \
   --manifest data/manifest.csv \
   --split data/splits/pooled_seed42_frac0.25.json \
   --epochs 20 \
+  --batch_size 256 \
   --accelerator gpu \
   --devices 1
 ```
-**Config highlights:**
-- Model: 512-d, 8 layers, 14.2M params
-- Batch size: 512 (contrastive pairs)
-- Precision: bf16-mixed
-- Compiled: Yes
-- GPU usage: ~40GB VRAM
+**Config:**  256-d model, 6 layers, bf16-mixed, gradient checkpointing
 
-**Monitor:** `watch -n 1 nvidia-smi`
-
-**Expected training time:** 30-40 minutes (235 batches × 20 epochs)
-
----
-
-### 5. Finetune Classifier (~60-80 min, 50 epochs)
+### 6. Supervised Fine-tune (~10-15 min, 30 epochs)
 ```bash
-# Find pretrained checkpoint
-ls results/lightning_logs/version_0/checkpoints/
-
-# Finetune
 python src/train_finetune.py \
   --config configs/finetune_classify.yaml \
   --manifest data/manifest.csv \
   --split data/splits/pooled_seed42_frac0.25.json \
-  --pretrained results/lightning_logs/version_0/checkpoints/epoch=19-step=4700.ckpt \
-  --epochs 50 \
+  --pretrained results/checkpoints/pretrain/mpae-last.ckpt \
+  --epochs 30 \
+  --batch_size 256 \
   --accelerator gpu \
   --devices 1
 ```
-**Config highlights:**
-- Model: 512-d encoder + 256-d MLP head
-- Batch size: 512
-- Early stopping: patience=10
-- GPU usage: ~38GB VRAM
 
-**Expected training time:** 60-80 minutes (235 batches × 50 epochs, stops early)
+### 7. Baseline CNN (comparison, ~5-10 min)
+```bash
+python src/train_baseline.py \
+  --config configs/finetune_classify.yaml \
+  --manifest data/manifest.csv \
+  --split data/splits/pooled_seed42_frac0.25.json \
+  --epochs 30 \
+  --batch_size 256 \
+  --accelerator gpu \
+  --devices 1 \
+  --encoder_type cnn
+```
 
----
-
-### 6. Evaluate (~30 seconds)
+### 8. Evaluate
 ```bash
 python src/evaluate.py \
-  --manifest data/manifest.csv \
-  --split data/splits/pooled_seed42_frac0.25.json \
-  --checkpoint results/lightning_logs/version_1/checkpoints/epoch=*.ckpt
-```
-
----
-
-## Cost Breakdown (25% Dataset)
-
-| Stage | Time | Cost @ $1.7/hr | GPU Util |
-|-------|------|----------------|----------|
-| Setup + Data | 7 min | $0.20 | 0-5% |
-| Pretrain (20 ep) | 35 min | $1.00 | 85% |
-| Finetune (50 ep) | 70 min | $2.00 | 80% |
-| Evaluate | 1 min | $0.03 | 60% |
-| **Total** | **~2 hours** | **~$3.40** | - |
-
-**Old (unoptimized):** ~10 hours, ~$17  
-**Savings:** ~70% cost reduction
-
----
-
-## Full Dataset (100%, Optional)
-
-```bash
-# Skip download_tiny_stream, use full download
-python src/data/download.py  # ~1.7GB, 20 min
-python src/data/parse_dataset.py  # ~5 min
-python src/data/splits.py --manifest data/manifest.csv --output data/splits/ --fraction 1.0 --seed 42
-
-# Pretrain (80 epochs)
-python src/train_pretrain.py \
-  --config configs/pretrain_mpae.yaml \
-  --manifest data/manifest.csv \
-  --split data/splits/pooled_seed42_frac1.0.json \
-  --epochs 80 \
-  --accelerator gpu \
-  --devices 1
-
-# Finetune (100 epochs)
-python src/train_finetune.py \
+  --protocol pooled \
+  --ckpt results/checkpoints/finetune/classifier-last.ckpt \
   --config configs/finetune_classify.yaml \
-  --manifest data/manifest.csv \
-  --split data/splits/pooled_seed42_frac1.0.json \
-  --pretrained results/lightning_logs/version_0/checkpoints/epoch=*.ckpt \
-  --epochs 100 \
-  --accelerator gpu \
-  --devices 1
-```
-
-**Estimated time:** 6-8 hours  
-**Estimated cost:** $10-14
-
----
-
-## Monitoring Tips
-
-### GPU Usage
-```bash
-watch -n 1 nvidia-smi
-```
-Look for:
-- GPU Util: 80-95%
-- Memory: 38-42GB / 48GB
-- Power: 260-290W
-
-### Training Logs
-```bash
-# Watch training logs
-tail -f results/lightning_logs/version_*/events.out.tfevents.*
-
-# Or use TensorBoard
-tensorboard --logdir results/lightning_logs/
-```
-
-### Checkpoints
-```bash
-ls -lh results/lightning_logs/version_*/checkpoints/
-```
-Best checkpoint saved automatically based on validation loss/F1.
-
----
-
-## Troubleshooting
-
-### OOM (Out of Memory)
-```yaml
-# configs/pretrain_mpae.yaml
-training:
-  batch_size: 256  # Reduce from 512
-  accumulate_grad_batches: 2  # Effective = 512
-```
-
-### Slow Data Loading
-```bash
-# Check if workers are alive
-ps aux | grep python
-# Should see 8+ DataLoader worker processes
-```
-
-### Torch Compile Errors
-```yaml
-# configs/*.yaml
-training:
-  compile: false  # Disable compilation
+  --tag pretrained
 ```
 
 ---
 
-## Expected Results (25% Dataset)
+## L4 GPU Optimizations Applied
+| Setting | Value | Purpose |
+|---------|-------|---------|
+| d_model | 256 | Fits L4 24GB memory |
+| n_layers | 6 | Sufficient depth for PSD data |
+| ffn_dim | 1024 | 4x expansion ratio |
+| batch_size | 256 | Max for L4 with bf16 |
+| precision | bf16-mixed | Halves memory, native L4 support |
+| gradient_checkpointing | true | Trades compute for memory |
+| torch.compile | true | ~20-40% speedup |
+| num_workers | 4 | Balanced for L4 instance |
 
-After full training:
-- **Test Accuracy:** ~65-75%
-- **Test Macro F1:** ~0.60-0.70
-- **Best Class (FM):** ~85% precision
-- **Worst Class (tetra):** ~50% recall
+## WandB Integration
+Set `WANDB_API_KEY` environment variable before training. All training scripts
+auto-detect it and log to project `ieee-psd-ssl`. If not set, default CSV logging is used.
 
-Full dataset should reach ~80-85% accuracy.
-
----
-
-## Next Steps
-
-1. **LOSO Evaluation:** Cross-sensor generalization
-   ```bash
-   python src/evaluate.py \
-     --manifest data/manifest.csv \
-     --split data/splits/loso_seed42_frac1.0.json \
-     --checkpoint results/.../epoch=*.ckpt
-   ```
-
-2. **Few-Shot Learning:**
-   ```bash
-   python src/train_finetune.py \
-     --config configs/finetune_classify.yaml \
-     --split data/splits/fewshot_k5_seed42_frac1.0.json \
-     ...
-   ```
-
-3. **Temperature Calibration:**
-   ```bash
-   python src/calibrate.py \
-     --checkpoint results/.../epoch=*.ckpt \
-     --manifest data/manifest.csv \
-     --split data/splits/pooled_seed42_frac1.0.json
-   ```
-
----
-
-See [L40S_OPTIMIZATIONS.md](L40S_OPTIMIZATIONS.md) for technical details on all optimizations.
+## Estimated Total Time (25% data)
+- Setup + data: ~5 min
+- Pretrain 20 epochs: ~20-30 min
+- Finetune 30 epochs: ~10-15 min
+- Baseline 30 epochs: ~5-10 min
+- **Total: ~45-60 min**

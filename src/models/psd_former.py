@@ -37,6 +37,7 @@ class PSDFormer(L.LightningModule):
         head_dropout: float = 0.2,
         use_temporal: bool = False,
         tcn_channels: list = None,
+        gradient_checkpointing: bool = False,
         lr: float = 5e-5,
         weight_decay: float = 1e-4,
         max_epochs: int = 50,
@@ -64,6 +65,7 @@ class PSDFormer(L.LightningModule):
             ffn_dim=ffn_dim,
             dropout=dropout,
             pool="cls",
+            gradient_checkpointing=gradient_checkpointing,
         )
 
         # Temporal branch (optional)

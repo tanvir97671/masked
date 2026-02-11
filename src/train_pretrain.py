@@ -7,6 +7,7 @@ Usage:
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -48,6 +49,12 @@ def deep_merge(base: dict, override: dict) -> dict:
 def main():
     parser = argparse.ArgumentParser(description="MPAE + SICR SSL Pretraining")
     parser.add_argument("--config", type=str, default="configs/pretrain_mpae.yaml")
+    parser.add_argument("--manifest", type=str, default=None, help="Path to manifest CSV")
+    parser.add_argument("--split", type=str, default=None, help="Path to split JSON file")
+    parser.add_argument("--epochs", type=int, default=None, help="Override max epochs")
+    parser.add_argument("--batch_size", type=int, default=None, help="Override batch size")
+    parser.add_argument("--accelerator", type=str, default=None, help="gpu/cpu/auto")
+    parser.add_argument("--devices", type=int, default=None, help="Number of devices")
     parser.add_argument("--data.fraction", type=float, default=None, dest="fraction")
     parser.add_argument("--seed", type=int, default=None)
     args = parser.parse_args()
@@ -59,9 +66,12 @@ def main():
 
     fraction = args.fraction or cfg.get("data", {}).get("fraction", 1.0)
 
-    # Determine split file
-    splits_dir = cfg.get("dataset", {}).get("splits_dir", "data/splits/")
-    split_file = Path(splits_dir) / f"pooled_seed{seed}_frac{fraction}.json"
+    # Determine split file (CLI --split overrides auto-detection)
+    if args.split:
+        split_file = Path(args.split)
+    else:
+        splits_dir = cfg.get("dataset", {}).get("splits_dir", "data/splits/")
+        split_file = Path(splits_dir) / f"pooled_seed{seed}_frac{fraction}.json"
 
     if not split_file.exists():
         print(f"Split file not found: {split_file}")
@@ -70,16 +80,20 @@ def main():
 
     # DataModule (contrastive mode for SICR)
     psd_length = cfg.get("dataset", {}).get("psd_length", 200)
-    batch_size = cfg.get("training", {}).get("batch_size", 256)
+    batch_size = args.batch_size or cfg.get("training", {}).get("batch_size", 256)
     num_workers = cfg.get("num_workers", 4)
+    manifest_path = args.manifest or cfg.get("dataset", {}).get("manifest_path", "data/manifest.csv")
 
     dm = ElectroSenseDataModule(
-        manifest_path=cfg.get("dataset", {}).get("manifest_path", "data/manifest.csv"),
+        manifest_path=manifest_path,
         split_path=str(split_file),
         psd_length=psd_length,
         batch_size=batch_size,
         num_workers=num_workers,
         contrastive=True,  # Enable cross-sensor pairs for SICR
+        pin_memory=cfg.get("pin_memory", True),
+        persistent_workers=cfg.get("persistent_workers", True),
+        prefetch_factor=cfg.get("prefetch_factor", 4),
     )
 
     # Model
@@ -87,6 +101,9 @@ def main():
     mpae_cfg = cfg.get("mpae", {})
     sicr_cfg = cfg.get("sicr", {})
     train_cfg = cfg.get("training", {})
+
+    # Override max_epochs from CLI
+    max_epochs = args.epochs or train_cfg.get("max_epochs", 80)
 
     model = MaskedPSDAutoencoder(
         psd_length=psd_length,
@@ -107,13 +124,14 @@ def main():
         lr=train_cfg.get("lr", 1e-4),
         weight_decay=train_cfg.get("weight_decay", 1e-5),
         warmup_epochs=train_cfg.get("warmup_epochs", 5),
-        max_epochs=train_cfg.get("max_epochs", 80),
+        max_epochs=max_epochs,
     )
 
-    # Compile model for speedup (PyTorch 2.0+)
+    # Compile encoder sub-modules for speedup (not the whole LightningModule!)
     if train_cfg.get("compile", False):
-        print("Compiling model with torch.compile (PyTorch 2.0+)...")
-        model = torch.compile(model, mode="default")
+        print("Compiling encoder with torch.compile (PyTorch 2.0+)...")
+        model.encoder = torch.compile(model.encoder, mode="default")
+        model.decoder = torch.compile(model.decoder, mode="default")
 
     # Callbacks
     log_cfg = cfg.get("logging", {})
@@ -133,25 +151,42 @@ def main():
         L.pytorch.callbacks.LearningRateMonitor(logging_interval="epoch"),
     ]
 
-    # Trainer - L40S optimized
+    # Trainer
+    accelerator = args.accelerator or "gpu"
+    devices = args.devices or 1
+
+    # WandB logger (if WANDB_API_KEY is set)
+    loggers = []
+    if os.environ.get("WANDB_API_KEY"):
+        from lightning.pytorch.loggers import WandbLogger
+        wandb_logger = WandbLogger(
+            project="ieee-psd-ssl",
+            name=f"pretrain-mpae-frac{fraction}",
+            save_dir=results_dir,
+            log_model=False,
+        )
+        loggers.append(wandb_logger)
+        print("WandB logging enabled")
+
     trainer = L.Trainer(
-        max_epochs=train_cfg.get("max_epochs", 80),
-        accelerator="gpu",  # Force GPU on Lightning AI
-        devices=1,
-        precision=cfg.get("precision", "bf16-mixed"),  # Use bf16 from config
+        max_epochs=max_epochs,
+        accelerator=accelerator,
+        devices=devices,
+        precision=cfg.get("precision", "bf16-mixed"),
         callbacks=callbacks,
+        logger=loggers if loggers else True,
         log_every_n_steps=log_cfg.get("log_every_n_steps", 50),
         gradient_clip_val=train_cfg.get("gradient_clip_val", 1.0),
         default_root_dir=results_dir,
-        deterministic=False,  # Faster training
-        benchmark=True,       # cudnn auto-tuner for best kernels
+        deterministic=False,
+        benchmark=True,
     )
 
     print("=" * 60)
     print("MPAE + SICR Self-Supervised Pretraining")
     print(f"  Data fraction: {fraction}")
     print(f"  Batch size: {batch_size}")
-    print(f"  Max epochs: {train_cfg.get('max_epochs', 80)}")
+    print(f"  Max epochs: {max_epochs}")
     print(f"  Mask ratio: {mpae_cfg.get('mask_ratio', 0.6)}")
     print(f"  SICR lambda: {sicr_cfg.get('lambda_sicr', 0.1)}")
     print(f"  Encoder: {enc_cfg.get('type', 'transformer')}")

@@ -36,13 +36,14 @@ def stream_extract_tiny(data_dir: str, max_files: int = 50, max_mb: int = 30):
     import tarfile
 
     data_path = Path(data_dir)
-    spectrum_dir = data_path / "spectrum_bands"
     
-    # Check if we already have enough files
-    existing = list(spectrum_dir.rglob("*.npy")) if spectrum_dir.exists() else []
+    # Check if we already have enough files (scan recursively)
+    existing = list(data_path.rglob("*.npy"))
     if len(existing) >= max_files:
         print(f"Already have {len(existing)} .npy files. Skipping download.")
-        return str(spectrum_dir)
+        # Find actual data root
+        actual_root = str(existing[0].parent.parent.parent) if existing else str(data_path)
+        return actual_root
     
     print(f"Streaming ElectroSense dataset from Zenodo...")
     print(f"Will extract first {max_files} .npy files (max {max_mb}MB download)")
@@ -88,10 +89,12 @@ def stream_extract_tiny(data_dir: str, max_files: int = 50, max_mb: int = 30):
                         
                         if member.name.endswith(".npy"):
                             extracted += 1
-                            # Track sensor
+                            # Track sensor from path like opt/.../spectrum_bands_2/SensorName/...
                             parts = Path(member.name).parts
-                            if len(parts) >= 2:
-                                sensors_seen.add(parts[1] if parts[0] == "spectrum_bands" else parts[0])
+                            for i, part in enumerate(parts):
+                                if "spectrum_bands" in part.lower() and i + 1 < len(parts):
+                                    sensors_seen.add(parts[i + 1])
+                                    break
                         
                         size_kb = member.size / 1024
                         if extracted % 10 == 0 or extracted <= 5:
@@ -110,14 +113,27 @@ def stream_extract_tiny(data_dir: str, max_files: int = 50, max_mb: int = 30):
     finally:
         response.close()
     
+    # Find actual data root (where sensor folders are)
+    all_npy = list(data_path.rglob("*.npy"))
+    if all_npy:
+        # Walk up from first npy to find spectrum_bands_2 dir
+        actual_root = str(data_path)
+        for npy in all_npy[:1]:
+            for parent in npy.parents:
+                if "spectrum_bands" in parent.name.lower():
+                    actual_root = str(parent)
+                    break
+    else:
+        actual_root = str(data_path)
+    
     print(f"\n{'='*50}")
     print(f"Download complete!")
     print(f"  Extracted: {extracted} .npy files")
     print(f"  Sensors: {len(sensors_seen)} ({', '.join(sorted(sensors_seen)[:5])}{'...' if len(sensors_seen) > 5 else ''})")
-    print(f"  Location: {spectrum_dir}")
+    print(f"  Data root: {actual_root}")
     print(f"{'='*50}")
     
-    return str(spectrum_dir)
+    return actual_root
 
 
 if __name__ == "__main__":

@@ -2,11 +2,11 @@
 defaults:
   base: "configs/base.yaml"
 
-# Training - L40S optimized
+# Training - L4 (24GB) optimized
 training:
   max_epochs: 50
-  batch_size: 512          # 4x increase for L40S
-  lr: 2.0e-4               # Scaled 4x with batch size
+  batch_size: 256          # Fits L4 24GB
+  lr: 1.5e-4               # Scaled with batch size
   weight_decay: 1.0e-4
   warmup_epochs: 3
   scheduler: "cosine"
@@ -31,10 +31,10 @@ model:
 # Encoder (MUST match pretrain config to load weights correctly)
 encoder:
   type: "transformer"
-  d_model: 512              # Match pretrain
-  n_layers: 8               # Match pretrain
+  d_model: 256              # Match pretrain
+  n_layers: 6               # Match pretrain
   n_heads: 8                # Match pretrain
-  ffn_dim: 2048             # Match pretrain
+  ffn_dim: 1024             # Match pretrain
   dropout: 0.1
   patch_size: 16
   gradient_checkpointing: true
@@ -42,7 +42,7 @@ encoder:
 # Classifier head
 head:
   type: "mlp"                 # "linear" or "mlp"
-  hidden_dim: 256             # Larger head
+  hidden_dim: 128             # Moderate head size
   dropout: 0.2
 
 # Calibration

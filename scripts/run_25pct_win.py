@@ -38,7 +38,7 @@ def main():
         "Step 1: Download dataset")
 
     # 2. Parse
-    run(f"{PYTHON} src/data/parse_dataset.py --data_dir {DATA_DIR}spectrum_bands --output {DATA_DIR}manifest.csv",
+    run(f"{PYTHON} src/data/parse_dataset.py --data_dir {DATA_DIR} --output {DATA_DIR}manifest.csv",
         "Step 2: Parse dataset")
 
     # 3. Splits
@@ -50,15 +50,16 @@ def main():
         "Step 4: Smoke test")
 
     # 5. SSL Pretrain
-    run(f"{PYTHON} src/train_pretrain.py --config configs/pretrain_mpae.yaml --data.fraction {FRACTION} --seed {SEED}",
+    split_file = f"{DATA_DIR}splits/pooled_seed{SEED}_frac{FRACTION}.json"
+    run(f"{PYTHON} src/train_pretrain.py --config configs/pretrain_mpae.yaml --data.fraction {FRACTION} --seed {SEED} --manifest {DATA_DIR}manifest.csv --split {split_file}",
         "Step 5: SSL Pretraining (MPAE + SICR)")
 
     # 6. Fine-tune
-    run(f"{PYTHON} src/train_finetune.py --config configs/finetune_classify.yaml --data.fraction {FRACTION} --seed {SEED}",
+    run(f"{PYTHON} src/train_finetune.py --config configs/finetune_classify.yaml --data.fraction {FRACTION} --seed {SEED} --manifest {DATA_DIR}manifest.csv --split {split_file}",
         "Step 6: Supervised Fine-tuning")
 
     # 6b. Baseline CNN
-    run(f"{PYTHON} src/train_baseline.py --config configs/finetune_classify.yaml --data.fraction {FRACTION} --seed {SEED} --encoder_type cnn",
+    run(f"{PYTHON} src/train_baseline.py --config configs/finetune_classify.yaml --data.fraction {FRACTION} --seed {SEED} --encoder_type cnn --manifest {DATA_DIR}manifest.csv --split {split_file}",
         "Step 6b: Baseline CNN")
 
     # 7. Evaluate

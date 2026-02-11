@@ -208,30 +208,60 @@ def generate_splits(
     """
     df = pd.read_csv(manifest_path)
 
+    # Build index map so split indices reference original manifest row positions
+    index_map = None
     if exclude_unknown:
-        df = df[df["label"] != "unkn"].reset_index(drop=True)
+        valid_mask = df["label"] != "unkn"
+        original_positions = df.index[valid_mask].tolist()
+        df = df[valid_mask].reset_index(drop=True)
+        index_map = {i: orig for i, orig in enumerate(original_positions)}
+
+    def _remap(split_dict):
+        """Remap filtered-DF positions back to original manifest positions."""
+        if index_map is None:
+            return split_dict
+        return {k: [index_map[i] for i in v] if isinstance(v, list) else v
+                for k, v in split_dict.items()}
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # 1) Pooled split
-    pooled = generate_pooled_split(df, seed=seed, fraction=fraction)
+    pooled = _remap(generate_pooled_split(df, seed=seed, fraction=fraction))
     with open(output_dir / f"pooled_seed{seed}_frac{fraction}.json", "w") as f:
         json.dump(pooled, f)
     print(f"Pooled split: train={len(pooled['train'])}, val={len(pooled['val'])}, test={len(pooled['test'])}")
 
     # 2) LOSO splits
-    loso = generate_loso_splits(
+    loso_raw = generate_loso_splits(
         df, num_sensors=num_loso_sensors, seed=seed, fraction=fraction
     )
+    # Remap nested LOSO structure
+    if index_map is not None:
+        loso = {}
+        for sensor_key, sensor_split in loso_raw.items():
+            loso[sensor_key] = {k: [index_map[i] for i in v] for k, v in sensor_split.items()}
+    else:
+        loso = loso_raw
     with open(output_dir / f"loso_seed{seed}_frac{fraction}.json", "w") as f:
         json.dump(loso, f)
     print(f"LOSO splits: {len(loso)} held-out sensors")
 
     # 3) Few-shot LOSO splits
-    fewshot = generate_fewshot_loso_splits(
+    fewshot_raw = generate_fewshot_loso_splits(
         df, k_values=fewshot_k_values, num_sensors=num_loso_sensors, seed=seed
     )
+    # Remap nested fewshot structure
+    if index_map is not None:
+        fewshot = {}
+        for sensor_key, k_splits in fewshot_raw.items():
+            fewshot[sensor_key] = {}
+            for k_val, split_data in k_splits.items():
+                fewshot[sensor_key][k_val] = {
+                    k: [index_map[i] for i in v] for k, v in split_data.items()
+                }
+    else:
+        fewshot = fewshot_raw
     with open(output_dir / f"fewshot_loso_seed{seed}.json", "w") as f:
         json.dump(fewshot, f, default=int)
     print(f"Few-shot LOSO splits: {len(fewshot)} sensors × {len(fewshot_k_values)} K values")
@@ -240,7 +270,7 @@ def generate_splits(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate data splits")
     parser.add_argument("--manifest", type=str, default="data/manifest.csv")
-    parser.add_argument("--output_dir", type=str, default="data/splits/")
+    parser.add_argument("--output", "--output_dir", type=str, default="data/splits/", dest="output_dir")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--fraction", type=float, default=1.0, help="Data fraction (0.25 for quick run)")
     parser.add_argument("--num_loso_sensors", type=int, default=None)

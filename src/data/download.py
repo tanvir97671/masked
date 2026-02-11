@@ -67,14 +67,19 @@ def download_dataset(data_dir: str = "data/", skip_if_exists: bool = True) -> st
     data_dir.mkdir(parents=True, exist_ok=True)
 
     tar_path = data_dir / FILENAME
-    extract_dir = data_dir / "spectrum_bands"
 
-    # Skip if already extracted
-    if skip_if_exists and extract_dir.exists():
-        n_dirs = len([d for d in extract_dir.iterdir() if d.is_dir()])
-        if n_dirs > 0:
-            print(f"Dataset already extracted at {extract_dir} ({n_dirs} sensor folders). Skipping.")
-            return str(extract_dir)
+    # Skip if already extracted (check for .npy files anywhere under data_dir)
+    if skip_if_exists:
+        npy_files = list(data_dir.rglob("*.npy"))
+        if len(npy_files) > 0:
+            # Find the actual data root
+            sample_path = npy_files[0]
+            for parent in sample_path.parents:
+                if parent.name in ("spectrum_bands", "spectrum_bands_2"):
+                    print(f"Dataset already extracted at {parent} ({len(npy_files)} .npy files). Skipping.")
+                    return str(parent)
+            print(f"Dataset already extracted under {data_dir} ({len(npy_files)} .npy files). Skipping.")
+            return str(data_dir)
 
     # Download
     if not tar_path.exists():
@@ -103,7 +108,15 @@ def download_dataset(data_dir: str = "data/", skip_if_exists: bool = True) -> st
     # Extract
     extract_tarball(str(tar_path), str(data_dir))
 
-    return str(extract_dir)
+    # Auto-detect actual data location after extraction
+    npy_files = list(data_dir.rglob("*.npy"))
+    if npy_files:
+        sample_path = npy_files[0]
+        for parent in sample_path.parents:
+            if parent.name in ("spectrum_bands", "spectrum_bands_2"):
+                print(f"Data extracted to: {parent}")
+                return str(parent)
+    return str(data_dir)
 
 
 if __name__ == "__main__":

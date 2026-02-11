@@ -164,15 +164,18 @@ def parse_single_npy(
 
 
 def parse_electrosense(
-    data_dir: str = "data/spectrum_bands",
+    data_dir: str = "data/",
     output_path: str = "data/manifest.csv",
 ) -> pd.DataFrame:
     """
     Walk the extracted ElectroSense dataset, parse all .npy files,
     and produce a manifest CSV.
 
+    Auto-detects nested paths like:
+      data/opt/shared/alessio/.../spectrum_bands_2/SensorName/...
+
     Args:
-        data_dir: Path to extracted spectrum_bands/ folder.
+        data_dir: Root data directory (or any parent of .npy files).
         output_path: Where to save the manifest CSV.
 
     Returns:
@@ -254,7 +257,7 @@ def parse_electrosense(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Parse ElectroSense PSD dataset")
-    parser.add_argument("--data_dir", type=str, default="data/spectrum_bands")
+    parser.add_argument("--data_dir", type=str, default="data/")
     parser.add_argument("--output", type=str, default="data/manifest.csv")
     args = parser.parse_args()
     parse_electrosense(args.data_dir, args.output)

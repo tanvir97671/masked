@@ -2,16 +2,16 @@
 defaults:
   base: "configs/base.yaml"
 
-# Training - L40S optimized
+# Training - L4 (24GB) optimized
 training:
   max_epochs: 80
-  batch_size: 512         # 2x increase for L40S 48GB
-  lr: 2.0e-4              # Scaled 2x with batch size
+  batch_size: 256           # Fits L4 24GB with bf16
+  lr: 1.5e-4               # Scaled with batch size
   weight_decay: 1.0e-5
   warmup_epochs: 5
   scheduler: "cosine"
   gradient_clip_val: 1.0
-  compile: true           # torch.compile for 2x speedup
+  compile: true             # torch.compile for speedup
 
 # Data
 data:
@@ -19,28 +19,28 @@ data:
   protocol: "pooled"
   include_unknown: true       # use 'unkn' class data for SSL too
 
-# Encoder - L40S optimized (larger capacity)
+# Encoder - L4 optimized
 encoder:
   type: "transformer"         # "transformer" or "cnn"
-  d_model: 512                # 4x larger for full L40S utilization
-  n_layers: 8                 # Deeper for better representations
+  d_model: 256                # Balanced for L4 24GB
+  n_layers: 6                 # 6 layers is sufficient
   n_heads: 8
-  ffn_dim: 2048               # 4x FFN expansion
+  ffn_dim: 1024               # 4x d_model expansion
   dropout: 0.1
   patch_size: 16
-  gradient_checkpointing: true  # Save memory for larger models
+  gradient_checkpointing: true  # Save memory
 
 # MPAE
 mpae:
   mask_ratio: 0.6
-  decoder_dim: 128       # Larger decoder
-  decoder_layers: 4      # Deeper decoder
+  decoder_dim: 64          # Lightweight decoder
+  decoder_layers: 2         # 2 layers sufficient
 
 # SICR
 sicr:
   lambda_sicr: 0.1
   temperature: 0.07
-  projection_dim: 128    # Match encoder scale
+  projection_dim: 64       # Compact projection
 
 # Logging
 logging:

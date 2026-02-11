@@ -10,6 +10,7 @@ Supports both Transformer and CNN encoders.
 
 import torch
 import torch.nn as nn
+import torch.utils.checkpoint
 import lightning as L
 
 from .components.patch_embed import PSDPatchEmbedding
@@ -166,8 +167,14 @@ class MaskedPSDAutoencoder(L.LightningModule):
 
         # Encode visible tokens through transformer layers
         if self.encoder_type == "transformer":
+            use_gc = getattr(self.encoder, 'gradient_checkpointing', False)
             for layer in self.encoder.layers:
-                visible_tokens = layer(visible_tokens)
+                if use_gc and self.training:
+                    visible_tokens = torch.utils.checkpoint.checkpoint(
+                        layer, visible_tokens, use_reentrant=False
+                    )
+                else:
+                    visible_tokens = layer(visible_tokens)
             visible_tokens = self.encoder.final_norm(visible_tokens)
         # For CNN encoder, fall back to full encoding (no masking advantage)
 
@@ -231,7 +238,15 @@ class MaskedPSDAutoencoder(L.LightningModule):
 
     def training_step(self, batch, batch_idx):
         # Contrastive dataset: (anchor, positive, label, is_cross_sensor)
-        if isinstance(batch, (list, tuple)) and len(batch) == 4:
+        # Standard dataset: (psd, label, sensor_id, snr)
+        # Distinguish by checking if second element is a 1D PSD vector (contrastive)
+        # vs. a scalar label tensor (standard)
+        is_contrastive = (
+            isinstance(batch, (list, tuple))
+            and len(batch) == 4
+            and batch[1].dim() == 2  # positive PSD is 2D (batch, psd_length)
+        )
+        if is_contrastive:
             anchor, positive, labels, is_cross = batch
 
             # MAE loss on anchor
@@ -265,8 +280,19 @@ class MaskedPSDAutoencoder(L.LightningModule):
         optimizer = torch.optim.AdamW(
             self.parameters(), lr=self.lr, weight_decay=self.weight_decay
         )
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=self.max_epochs, eta_min=1e-6
+        # Warmup + cosine annealing
+        warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+            optimizer, start_factor=0.01, end_factor=1.0,
+            total_iters=max(1, self.warmup_epochs),
+        )
+        cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=max(1, self.max_epochs - self.warmup_epochs),
+            eta_min=1e-6,
+        )
+        scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer,
+            schedulers=[warmup_scheduler, cosine_scheduler],
+            milestones=[self.warmup_epochs],
         )
         return {
             "optimizer": optimizer,

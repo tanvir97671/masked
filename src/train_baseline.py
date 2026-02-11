@@ -8,6 +8,7 @@ Usage:
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -35,6 +36,12 @@ def load_config(config_path: str) -> dict:
 def main():
     parser = argparse.ArgumentParser(description="CNN Baseline Training")
     parser.add_argument("--config", type=str, default="configs/finetune_classify.yaml")
+    parser.add_argument("--manifest", type=str, default=None)
+    parser.add_argument("--split", type=str, default=None)
+    parser.add_argument("--epochs", type=int, default=None)
+    parser.add_argument("--batch_size", type=int, default=None)
+    parser.add_argument("--accelerator", type=str, default=None)
+    parser.add_argument("--devices", type=int, default=None)
     parser.add_argument("--data.fraction", type=float, default=None, dest="fraction")
     parser.add_argument("--encoder_type", type=str, default="cnn",
                         choices=["cnn", "transformer"])
@@ -49,24 +56,31 @@ def main():
     fraction = args.fraction or cfg.get("data", {}).get("fraction", 1.0)
 
     # Split file
-    splits_dir = cfg.get("dataset", {}).get("splits_dir", "data/splits/")
-    split_file = Path(splits_dir) / f"pooled_seed{seed}_frac{fraction}.json"
+    if args.split:
+        split_file = Path(args.split)
+    else:
+        splits_dir = cfg.get("dataset", {}).get("splits_dir", "data/splits/")
+        split_file = Path(splits_dir) / f"pooled_seed{seed}_frac{fraction}.json"
 
     if not split_file.exists():
         print(f"Split file not found: {split_file}")
         sys.exit(1)
 
     psd_length = cfg.get("dataset", {}).get("psd_length", 200)
-    batch_size = cfg.get("training", {}).get("batch_size", 128)
+    batch_size = args.batch_size or cfg.get("training", {}).get("batch_size", 128)
     num_workers = cfg.get("num_workers", 4)
+    manifest_path = args.manifest or cfg.get("dataset", {}).get("manifest_path", "data/manifest.csv")
 
     dm = ElectroSenseDataModule(
-        manifest_path=cfg.get("dataset", {}).get("manifest_path", "data/manifest.csv"),
+        manifest_path=manifest_path,
         split_path=str(split_file),
         psd_length=psd_length,
         batch_size=batch_size,
         num_workers=num_workers,
         contrastive=False,
+        pin_memory=cfg.get("pin_memory", True),
+        persistent_workers=cfg.get("persistent_workers", True),
+        prefetch_factor=cfg.get("prefetch_factor", 4),
     )
     dm.setup()
 
@@ -77,6 +91,7 @@ def main():
     # Model: from scratch, no pretrained
     head_cfg = cfg.get("head", {})
     train_cfg = cfg.get("training", {})
+    max_epochs = args.epochs or train_cfg.get("max_epochs", 50)
 
     model = PSDClassifier(
         psd_length=psd_length,
@@ -90,14 +105,14 @@ def main():
         freeze_encoder=False,
         lr=train_cfg.get("lr", 5e-5),
         weight_decay=train_cfg.get("weight_decay", 1e-4),
-        max_epochs=train_cfg.get("max_epochs", 50),
+        max_epochs=max_epochs,
         class_weights=class_weights,
     )
 
-    # Compile model for speedup
+    # Compile encoder sub-module
     if train_cfg.get("compile", False):
-        print("Compiling model with torch.compile (PyTorch 2.0+)...")
-        model = torch.compile(model, mode="default")
+        print("Compiling encoder with torch.compile...")
+        model.encoder = torch.compile(model.encoder, mode="default")
 
     # Callbacks
     results_dir = cfg.get("results_dir", "results/")
@@ -121,13 +136,30 @@ def main():
         L.pytorch.callbacks.LearningRateMonitor(logging_interval="epoch"),
     ]
 
-    # Trainer - L40S optimized
+    # Trainer
+    accelerator = args.accelerator or "gpu"
+    devices = args.devices or 1
+
+    # WandB logger (if WANDB_API_KEY is set)
+    loggers = []
+    if os.environ.get("WANDB_API_KEY"):
+        from lightning.pytorch.loggers import WandbLogger
+        wandb_logger = WandbLogger(
+            project="ieee-psd-ssl",
+            name=f"baseline-{args.encoder_type}-frac{fraction}",
+            save_dir=results_dir,
+            log_model=False,
+        )
+        loggers.append(wandb_logger)
+        print("WandB logging enabled")
+
     trainer = L.Trainer(
-        max_epochs=train_cfg.get("max_epochs", 50),
-        accelerator="gpu",
-        devices=1,
+        max_epochs=max_epochs,
+        accelerator=accelerator,
+        devices=devices,
         precision=cfg.get("precision", "bf16-mixed"),
         callbacks=callbacks,
+        logger=loggers if loggers else True,
         gradient_clip_val=train_cfg.get("gradient_clip_val", 1.0),
         default_root_dir=results_dir,
         deterministic=False,
@@ -138,7 +170,7 @@ def main():
     print(f"Baseline Training ({args.encoder_type.upper()} from scratch)")
     print(f"  Data fraction: {fraction}")
     print(f"  Batch size: {batch_size}")
-    print(f"  Max epochs: {train_cfg.get('max_epochs', 50)}")
+    print(f"  Max epochs: {max_epochs}")
     print("=" * 60)
 
     trainer.fit(model, datamodule=dm)

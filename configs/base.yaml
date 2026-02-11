@@ -1,11 +1,12 @@
-# Base configuration — L40S optimized
+# Base configuration — L4 (24GB) optimized
 seed: 42
 data_dir: "data/"
 results_dir: "results/"
-precision: "bf16-mixed"     # bfloat16 for L40S (better than fp16)
-num_workers: 8              # Multi-core CPU on Lightning AI
+precision: "bf16-mixed"     # bfloat16 for L4
+num_workers: 4              # L4 has fewer cores than L40S
 persistent_workers: true    # Keep workers alive between epochs
 pin_memory: true
+prefetch_factor: 2          # Prefetch batches per worker
 
 # Dataset
 dataset:
