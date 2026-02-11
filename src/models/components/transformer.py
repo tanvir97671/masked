@@ -66,10 +66,12 @@ class TransformerEncoder(nn.Module):
         ffn_dim: int = 256,
         dropout: float = 0.1,
         pool: str = "cls",  # "cls" or "mean"
+        gradient_checkpointing: bool = False,  # Save memory for large models
     ):
         super().__init__()
         self.d_model = d_model
         self.pool = pool
+        self.gradient_checkpointing = gradient_checkpointing
 
         self.layers = nn.ModuleList([
             TransformerEncoderLayer(d_model, n_heads, ffn_dim, dropout)
@@ -90,7 +92,13 @@ class TransformerEncoder(nn.Module):
             (batch, d_model)
         """
         for layer in self.layers:
-            x = layer(x, src_key_padding_mask)
+            if self.gradient_checkpointing and self.training:
+                # Use checkpoint for memory efficiency
+                x = torch.utils.checkpoint.checkpoint(
+                    layer, x, src_key_padding_mask, use_reentrant=False
+                )
+            else:
+                x = layer(x, src_key_padding_mask)
 
         x = self.final_norm(x)
 

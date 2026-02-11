@@ -40,6 +40,7 @@ class MaskedPSDAutoencoder(L.LightningModule):
         sicr_temperature: float = 0.07,
         sicr_proj_dim: int = 64,
         encoder_type: str = "transformer",
+        gradient_checkpointing: bool = False,  # Memory optimization
         lr: float = 1e-4,
         weight_decay: float = 1e-5,
         warmup_epochs: int = 5,
@@ -76,6 +77,7 @@ class MaskedPSDAutoencoder(L.LightningModule):
                 ffn_dim=ffn_dim,
                 dropout=dropout,
                 pool="cls",  # CLS pooling for SICR; MAE manually iterates layers
+                gradient_checkpointing=gradient_checkpointing,
             )
         else:
             self.encoder = CNNEncoder(

@@ -2,16 +2,17 @@
 defaults:
   base: "configs/base.yaml"
 
-# Training
+# Training - L40S optimized
 training:
   max_epochs: 50
-  batch_size: 128
-  lr: 5.0e-5
+  batch_size: 512          # 4x increase for L40S
+  lr: 2.0e-4               # Scaled 4x with batch size
   weight_decay: 1.0e-4
   warmup_epochs: 3
   scheduler: "cosine"
   gradient_clip_val: 1.0
   early_stopping_patience: 10
+  compile: true            # torch.compile speedup
 
 # Data
 data:
@@ -30,17 +31,18 @@ model:
 # Encoder (MUST match pretrain config to load weights correctly)
 encoder:
   type: "transformer"
-  d_model: 128
-  n_layers: 4
-  n_heads: 4
-  ffn_dim: 256
+  d_model: 512              # Match pretrain
+  n_layers: 8               # Match pretrain
+  n_heads: 8                # Match pretrain
+  ffn_dim: 2048             # Match pretrain
   dropout: 0.1
   patch_size: 16
+  gradient_checkpointing: true
 
 # Classifier head
 head:
   type: "mlp"                 # "linear" or "mlp"
-  hidden_dim: 128
+  hidden_dim: 256             # Larger head
   dropout: 0.2
 
 # Calibration

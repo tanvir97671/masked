@@ -36,6 +36,7 @@ class PSDClassifier(L.LightningModule):
         head_hidden: int = 128,
         head_dropout: float = 0.2,
         encoder_type: str = "transformer",
+        gradient_checkpointing: bool = False,
         pretrained_ckpt: str = None,
         freeze_encoder: bool = False,
         lr: float = 5e-5,
@@ -70,6 +71,7 @@ class PSDClassifier(L.LightningModule):
                 ffn_dim=ffn_dim,
                 dropout=dropout,
                 pool="cls",
+                gradient_checkpointing=gradient_checkpointing,
             )
         else:
             self.patch_embed = None

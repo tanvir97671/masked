@@ -163,6 +163,8 @@ class ElectroSenseDataModule(L.LightningDataModule):
         num_workers: int = 4,
         contrastive: bool = False,
         pin_memory: bool = True,
+        persistent_workers: bool = True,  # Keep workers alive
+        prefetch_factor: int = 4,          # Prefetch 4 batches per worker
     ):
         super().__init__()
         self.manifest_path = manifest_path
@@ -172,6 +174,8 @@ class ElectroSenseDataModule(L.LightningDataModule):
         self.num_workers = num_workers
         self.contrastive = contrastive
         self.pin_memory = pin_memory
+        self.persistent_workers = persistent_workers
+        self.prefetch_factor = prefetch_factor
 
         self.manifest: Optional[pd.DataFrame] = None
         self.train_dataset: Optional[Dataset] = None
@@ -213,6 +217,8 @@ class ElectroSenseDataModule(L.LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             drop_last=True,
+            persistent_workers=self.persistent_workers if self.num_workers > 0 else False,
+            prefetch_factor=self.prefetch_factor if self.num_workers > 0 else None,
         )
 
     def val_dataloader(self):
@@ -222,6 +228,8 @@ class ElectroSenseDataModule(L.LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
+            persistent_workers=self.persistent_workers if self.num_workers > 0 else False,
+            prefetch_factor=self.prefetch_factor if self.num_workers > 0 else None,
         )
 
     def test_dataloader(self):
@@ -231,6 +239,8 @@ class ElectroSenseDataModule(L.LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
+            persistent_workers=self.persistent_workers if self.num_workers > 0 else False,
+            prefetch_factor=self.prefetch_factor if self.num_workers > 0 else None,
         )
 
     def get_class_weights(self) -> torch.Tensor:

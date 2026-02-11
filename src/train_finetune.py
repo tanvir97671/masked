@@ -116,6 +116,7 @@ def main():
         head_hidden=head_cfg.get("hidden_dim", 128),
         head_dropout=head_cfg.get("dropout", 0.2),
         encoder_type=enc_cfg.get("type", "transformer"),
+        gradient_checkpointing=enc_cfg.get("gradient_checkpointing", False),
         pretrained_ckpt=pretrained_ckpt,
         freeze_encoder=args.freeze_encoder or model_cfg.get("freeze_encoder", False),
         lr=train_cfg.get("lr", 5e-5),
@@ -124,6 +125,11 @@ def main():
         max_epochs=train_cfg.get("max_epochs", 50),
         class_weights=class_weights,
     )
+
+    # Compile model for speedup
+    if train_cfg.get("compile", False):
+        print("Compiling model with torch.compile (PyTorch 2.0+)...")
+        model = torch.compile(model, mode="default")
 
     # Callbacks
     results_dir = cfg.get("results_dir", "results/")
@@ -148,16 +154,18 @@ def main():
         L.pytorch.callbacks.LearningRateMonitor(logging_interval="epoch"),
     ]
 
+    # Trainer - L40S optimized
     trainer = L.Trainer(
         max_epochs=train_cfg.get("max_epochs", 50),
-        accelerator="auto",
+        accelerator="gpu",  # Force GPU
         devices=1,
-        precision=cfg.get("precision", "16-mixed"),
+        precision=cfg.get("precision", "bf16-mixed"),
         callbacks=callbacks,
         log_every_n_steps=log_cfg.get("log_every_n_steps", 20),
         gradient_clip_val=train_cfg.get("gradient_clip_val", 1.0),
         default_root_dir=results_dir,
-        deterministic=True,
+        deterministic=False,
+        benchmark=True,
     )
 
     tag = "pretrained" if pretrained_ckpt else "scratch"

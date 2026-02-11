@@ -1,9 +1,11 @@
-# Base configuration — shared defaults
+# Base configuration — L40S optimized
 seed: 42
 data_dir: "data/"
 results_dir: "results/"
-precision: "16-mixed"
-num_workers: 4
+precision: "bf16-mixed"     # bfloat16 for L40S (better than fp16)
+num_workers: 8              # Multi-core CPU on Lightning AI
+persistent_workers: true    # Keep workers alive between epochs
+pin_memory: true
 
 # Dataset
 dataset:

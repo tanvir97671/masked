@@ -103,11 +103,17 @@ def main():
         sicr_temperature=sicr_cfg.get("temperature", 0.07),
         sicr_proj_dim=sicr_cfg.get("projection_dim", 64),
         encoder_type=enc_cfg.get("type", "transformer"),
+        gradient_checkpointing=enc_cfg.get("gradient_checkpointing", False),
         lr=train_cfg.get("lr", 1e-4),
         weight_decay=train_cfg.get("weight_decay", 1e-5),
         warmup_epochs=train_cfg.get("warmup_epochs", 5),
         max_epochs=train_cfg.get("max_epochs", 80),
     )
+
+    # Compile model for speedup (PyTorch 2.0+)
+    if train_cfg.get("compile", False):
+        print("Compiling model with torch.compile (PyTorch 2.0+)...")
+        model = torch.compile(model, mode="default")
 
     # Callbacks
     log_cfg = cfg.get("logging", {})
@@ -127,17 +133,18 @@ def main():
         L.pytorch.callbacks.LearningRateMonitor(logging_interval="epoch"),
     ]
 
-    # Trainer
+    # Trainer - L40S optimized
     trainer = L.Trainer(
         max_epochs=train_cfg.get("max_epochs", 80),
-        accelerator="auto",
+        accelerator="gpu",  # Force GPU on Lightning AI
         devices=1,
-        precision=cfg.get("precision", "16-mixed"),
+        precision=cfg.get("precision", "bf16-mixed"),  # Use bf16 from config
         callbacks=callbacks,
         log_every_n_steps=log_cfg.get("log_every_n_steps", 50),
         gradient_clip_val=train_cfg.get("gradient_clip_val", 1.0),
         default_root_dir=results_dir,
-        deterministic=True,
+        deterministic=False,  # Faster training
+        benchmark=True,       # cudnn auto-tuner for best kernels
     )
 
     print("=" * 60)
