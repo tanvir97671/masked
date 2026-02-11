@@ -120,10 +120,27 @@ class PSDClassifier(L.LightningModule):
             task="multiclass", num_classes=num_classes, average="macro"
         )
 
+    @staticmethod
+    def _strip_compiled_prefix(state_dict: dict) -> dict:
+        """Strip '_orig_mod.' prefix added by torch.compile from state dict keys."""
+        cleaned = {}
+        for k, v in state_dict.items():
+            new_key = k.replace("_orig_mod.", "")
+            cleaned[new_key] = v
+        return cleaned
+
     def _load_pretrained(self, ckpt_path: str):
         """Load encoder weights from MPAE checkpoint."""
         print(f"Loading pretrained encoder from {ckpt_path}")
-        mpae = MaskedPSDAutoencoder.load_from_checkpoint(ckpt_path)
+
+        # Load checkpoint manually to handle torch.compile key prefixes
+        ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=True)
+        state_dict = self._strip_compiled_prefix(ckpt["state_dict"])
+
+        # Reconstruct MPAE from cleaned state dict
+        hparams = ckpt.get("hyper_parameters", {})
+        mpae = MaskedPSDAutoencoder(**hparams)
+        mpae.load_state_dict(state_dict, strict=True)
 
         if self.encoder_type == "transformer":
             # Load patch embedding weights
