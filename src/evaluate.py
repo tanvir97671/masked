@@ -218,9 +218,22 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    def _load_classifier_ckpt(ckpt_path):
+        """Load PSDClassifier checkpoint, handling torch.compile _orig_mod. prefix."""
+        ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=True)
+        state_dict = ckpt["state_dict"]
+        # Strip _orig_mod. prefix added by torch.compile
+        cleaned = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
+        hparams = ckpt.get("hyper_parameters", {})
+        # Remove class_weights from hparams if present (it's a buffer, not a constructor arg)
+        hparams.pop("class_weights", None)
+        model = PSDClassifier(**hparams)
+        model.load_state_dict(cleaned, strict=False)
+        return model
+
     if args.protocol == "pooled":
         # Load model
-        model = PSDClassifier.load_from_checkpoint(args.ckpt)
+        model = _load_classifier_ckpt(args.ckpt)
 
         splits_dir = cfg.get("dataset", {}).get("splits_dir", "data/splits/")
         split_file = Path(splits_dir) / f"pooled_seed{seed}_frac{fraction}.json"
