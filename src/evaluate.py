@@ -194,6 +194,8 @@ def main():
     parser.add_argument("--config", type=str, default="configs/finetune_classify.yaml")
     parser.add_argument("--eval_config", type=str, default="configs/eval_loso.yaml")
     parser.add_argument("--tag", type=str, default="pretrained")
+    parser.add_argument("--split", type=str, default=None,
+                        help="Path to split JSON file (overrides fraction/seed lookup)")
     parser.add_argument("--num_sensors", type=int, default=None)
     parser.add_argument("--data.fraction", type=float, default=None, dest="fraction")
     parser.add_argument("--seed", type=int, default=None)
@@ -235,8 +237,11 @@ def main():
         # Load model
         model = _load_classifier_ckpt(args.ckpt)
 
-        splits_dir = cfg.get("dataset", {}).get("splits_dir", "data/splits/")
-        split_file = Path(splits_dir) / f"pooled_seed{seed}_frac{fraction}.json"
+        if args.split:
+            split_file = Path(args.split)
+        else:
+            splits_dir = cfg.get("dataset", {}).get("splits_dir", "data/splits/")
+            split_file = Path(splits_dir) / f"pooled_seed{seed}_frac{fraction}.json"
 
         dm = ElectroSenseDataModule(
             manifest_path=cfg.get("dataset", {}).get("manifest_path", "data/manifest.csv"),
